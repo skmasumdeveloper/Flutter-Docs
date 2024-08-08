@@ -1,0 +1,580 @@
+# Flutter Structure
+
+lib/
+  ├── main.dart
+  ├── screens/
+  │   ├── login_screen.dart
+  │   ├── register_screen.dart
+  │   ├── home_screen.dart
+  │   ├── add_post_screen.dart
+  │   ├── edit_post_screen.dart
+  │   └── profile_screen.dart
+  ├── models/
+  │   └── post.dart
+  ├── services/
+  │   ├── api_service.dart
+  │   └── auth_service.dart
+  ├── utils/
+  │   └── shared_prefs.dart
+  └── widgets/
+      └── post_item.dart
+
+  
+# Add these dependencies in your pubspec.yaml:
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^0.14.0
+  shared_preferences: ^2.0.6
+
+# main.dart
+
+import 'package:flutter/material.dart';
+import 'screens/login_screen.dart';
+import 'utils/shared_prefs.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  bool isLoggedIn = await SharedPrefs.isLoggedIn();
+  runApp(MyApp(isLoggedIn: isLoggedIn));
+}
+
+class MyApp extends StatelessWidget {
+  final bool isLoggedIn;
+
+  MyApp({required this.isLoggedIn});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: isLoggedIn ? HomeScreen() : LoginScreen(),
+    );
+  }
+}
+
+# auth_service.dart
+
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+
+class AuthService {
+  static const String apiUrl = 'https://yourapi.com';
+
+  static Future<bool> login(String email, String password) async {
+    final response = await http.post(
+      Uri.parse('$apiUrl/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email, 'password': password}),
+    );
+    if (response.statusCode == 200) {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token', jsonDecode(response.body)['token']);
+      return true;
+    }
+    return false;
+  }
+
+  static Future<bool> register(String email, String password) async {
+    final response = await http.post(
+      Uri.parse('$apiUrl/register'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email, 'password': password}),
+    );
+    return response.statusCode == 201;
+  }
+}
+
+# shared_prefs.dart
+
+import 'package:shared_preferences/shared_preferences.dart';
+
+class SharedPrefs {
+  static Future<bool> isLoggedIn() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getString('token') != null;
+  }
+
+  static Future<void> logout() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.remove('token');
+  }
+}
+
+# api_service.dart
+
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/post.dart';
+
+class ApiService {
+  static const String apiUrl = 'https://yourapi.com';
+
+  static Future<List<Post>> fetchPosts() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('token');
+    final response = await http.get(
+      Uri.parse('$apiUrl/posts'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode == 200) {
+      List<dynamic> body = jsonDecode(response.body);
+      return body.map((post) => Post.fromJson(post)).toList();
+    }
+    throw Exception('Failed to load posts');
+  }
+
+  static Future<bool> addPost(String title, String content) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('token');
+    final response = await http.post(
+      Uri.parse('$apiUrl/posts'),
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+      body: jsonEncode({'title': title, 'content': content}),
+    );
+    return response.statusCode == 201;
+  }
+
+  static Future<bool> updatePost(int id, String title, String content) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('token');
+    final response = await http.put(
+      Uri.parse('$apiUrl/posts/$id'),
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+      body: jsonEncode({'title': title, 'content': content}),
+    );
+    return response.statusCode == 200;
+  }
+
+  static Future<bool> deletePost(int id) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('token');
+    final response = await http.delete(
+      Uri.parse('$apiUrl/posts/$id'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return response.statusCode == 204;
+  }
+}
+
+# post.dart
+
+class Post {
+  final int id;
+  final String title;
+  final String content;
+
+  Post({required this.id, required this.title, required this.content});
+
+  factory Post.fromJson(Map<String, dynamic> json) {
+    return Post(
+      id: json['id'],
+      title: json['title'],
+      content: json['content'],
+    );
+  }
+}
+
+# login_screen.dart
+
+import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
+import '../utils/shared_prefs.dart';
+import 'home_screen.dart';
+import 'register_screen.dart';
+
+class LoginScreen extends StatefulWidget {
+  @override
+  _LoginScreenState createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  void _login() async {
+    bool success = await AuthService.login(
+      _emailController.text,
+      _passwordController.text,
+    );
+    if (success) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => HomeScreen()),
+      );
+    } else {
+      // Handle login error
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Login')),
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _emailController,
+              decoration: InputDecoration(labelText: 'Email'),
+            ),
+            TextField(
+              controller: _passwordController,
+              decoration: InputDecoration(labelText: 'Password'),
+              obscureText: true,
+            ),
+            ElevatedButton(
+              onPressed: _login,
+              child: Text('Login'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => RegisterScreen()),
+                );
+              },
+              child: Text('Register'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+# register_screen.dart
+  
+import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
+
+class RegisterScreen extends StatefulWidget {
+  @override
+  _RegisterScreenState createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  void _register() async {
+    bool success = await AuthService.register(
+      _emailController.text,
+      _passwordController.text,
+    );
+    if (success) {
+      Navigator.pop(context);
+    } else {
+      // Handle registration error
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Register')),
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _emailController,
+              decoration: InputDecoration(labelText: 'Email'),
+            ),
+            TextField(
+              controller: _passwordController,
+              decoration: InputDecoration(labelText: 'Password'),
+              obscureText: true,
+            ),
+            ElevatedButton(
+              onPressed: _register,
+              child: Text('Register'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+# home_screen.dart
+
+import 'package:flutter/material.dart';
+import '../models/post.dart';
+import '../services/api_service.dart';
+import 'add_post_screen.dart';
+import 'edit_post_screen.dart';
+import 'profile_screen.dart';
+import '../widgets/post_item.dart';
+
+class HomeScreen extends StatefulWidget {
+  @override
+  _HomeScreenState createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late Future<List<Post>> _futurePosts;
+
+  @override
+  void initState() {
+    super.initState();
+    _futurePosts = ApiService.fetchPosts();
+  }
+
+  void _refreshPosts() {
+    setState(() {
+      _futurePosts = ApiService.fetchPosts();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Posts'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.account_circle),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => ProfileScreen()),
+              );
+            },
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<Post>>(
+        future: _futurePosts,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return Center(child: Text('No posts available'));
+          } else {
+            return ListView.builder(
+              itemCount: snapshot.data!.length,
+              itemBuilder: (context, index) {
+                return PostItem(
+                  post: snapshot.data![index],
+                  onDelete: _refreshPosts,
+                );
+              },
+            );
+          }
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          bool? postAdded = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => AddPostScreen()),
+          );
+          if (postAdded == true) _refreshPosts();
+        },
+        child: Icon(Icons.add),
+      ),
+    );
+  }
+}
+
+# add_post_screen.dart
+
+import 'package:flutter/material.dart';
+import '../services/api_service.dart';
+
+class AddPostScreen extends StatefulWidget {
+  @override
+  _AddPostScreenState createState() => _AddPostScreenState();
+}
+
+class _AddPostScreenState extends State<AddPostScreen> {
+  final _titleController = TextEditingController();
+  final _contentController = TextEditingController();
+
+  void _addPost() async {
+    bool success = await ApiService.addPost(
+      _titleController.text,
+      _contentController.text,
+    );
+    if (success) {
+      Navigator.pop(context, true);
+    } else {
+      // Handle add post error
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Add Post')),
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _titleController,
+              decoration: InputDecoration(labelText: 'Title'),
+            ),
+            TextField(
+              controller: _contentController,
+              decoration: InputDecoration(labelText: 'Content'),
+            ),
+            ElevatedButton(
+              onPressed: _addPost,
+              child: Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+# edit_post_screen.dart
+
+import 'package:flutter/material.dart';
+import '../models/post.dart';
+import '../services/api_service.dart';
+
+class EditPostScreen extends StatefulWidget {
+  final Post post;
+
+  EditPostScreen({required this.post});
+
+  @override
+  _EditPostScreenState createState() => _EditPostScreenState();
+}
+
+class _EditPostScreenState extends State<EditPostScreen> {
+  late TextEditingController _titleController;
+  late TextEditingController _contentController;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.post.title);
+    _contentController = TextEditingController(text: widget.post.content);
+  }
+
+  void _editPost() async {
+    bool success = await ApiService.updatePost(
+      widget.post.id,
+      _titleController.text,
+      _contentController.text,
+    );
+    if (success) {
+      Navigator.pop(context, true);
+    } else {
+      // Handle edit post error
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Edit Post')),
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _titleController,
+              decoration: InputDecoration(labelText: 'Title'),
+            ),
+            TextField(
+              controller: _contentController,
+              decoration: InputDecoration(labelText: 'Content'),
+            ),
+            ElevatedButton(
+              onPressed: _editPost,
+              child: Text('Update'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+# profile_screen.dart
+
+import 'package:flutter/material.dart';
+import '../utils/shared_prefs.dart';
+import 'login_screen.dart';
+
+class ProfileScreen extends StatelessWidget {
+  void _logout(BuildContext context) async {
+    await SharedPrefs.logout();
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => LoginScreen()),
+      (route) => false,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Profile')),
+      body: Center(
+        child: ElevatedButton(
+          onPressed: () => _logout(context),
+          child: Text('Logout'),
+        ),
+      ),
+    );
+  }
+}
+
+
+# post_item.dart
+
+import 'package:flutter/material.dart';
+import '../models/post.dart';
+import '../services/api_service.dart';
+import '../screens/edit_post_screen.dart';
+
+class PostItem extends StatelessWidget {
+  final Post post;
+  final VoidCallback onDelete;
+
+  PostItem({required this.post, required this.onDelete});
+
+  void _deletePost(BuildContext context) async {
+    bool success = await ApiService.deletePost(post.id);
+    if (success) onDelete();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: Text(post.title),
+      subtitle: Text(post.content),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(Icons.edit),
+            onPressed: () async {
+              bool? postEdited = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => EditPostScreen(post: post)),
+              );
+              if (postEdited == true) onDelete();
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.delete),
+            onPressed: () => _deletePost(context),
+          ),
+        ],
+      ),
+    );
+  }
+}
